@@ -17,7 +17,7 @@ class RomaniaMap:
                        max(p[0] for p in points), max(p[1] for p in points))
         self.positions = {}
 
-    def draw(self, canvas, selected_ids, tour_ids=(), *, start_id=None):
+    def draw(self, canvas, selected_ids, tour_ids=(), *, start_id=None, route_color="#255f9a"):
         width, height = canvas.winfo_width(), canvas.winfo_height()
         self.positions = {}
         if width <= 100 or height <= 100:
@@ -43,7 +43,7 @@ class RomaniaMap:
         for index, city_id in enumerate(tour_ids):
             next_id = tour_ids[(index + 1) % len(tour_ids)]
             canvas.create_line(*self.positions[city_id], *self.positions[next_id],
-                               fill="#255f9a", width=2, arrow="last", tags="route-edge")
+                               fill=route_color, width=2, arrow="last", tags="route-edge")
         start = start_id if start_id is not None else tour_ids[0] if tour_ids else None
         for seat in self.seats:
             x, y = self.positions[seat.id]

@@ -14,15 +14,17 @@ verified the item.
 
 ## Algorithm — follow [algorithm/TUTORIAL.md](algorithm/TUTORIAL.md)
 
-- [ ] Represent city coordinates and calculate the distance matrix.
-- [ ] Calculate closed-tour length and verify the square example by hand.
-- [ ] Define ACO parameters and result format.
-- [ ] Implement probabilistic selection among unvisited cities.
-- [ ] Build complete tours and calculate their lengths.
-- [ ] Add evaporation and pheromone deposits.
-- [ ] Track best-so-far tour and history.
-- [ ] Test invalid inputs, repeatability, and small instances.
-- [ ] Implement nearest-neighbor baseline.
+- [x] Represent city coordinates and calculate the distance matrix.
+- [ ] Calculate closed-tour length and verify the square example by hand (code/tests complete; team hand-check remains).
+- [x] Define ACO parameters and result format.
+- [x] Implement probabilistic selection among unvisited cities.
+- [x] Build complete tours and calculate their lengths.
+- [x] Add evaporation and pheromone deposits.
+- [x] Track best-so-far tour and history.
+- [x] Test invalid inputs, repeatability, and small instances.
+- [x] Implement nearest-neighbor baseline.
+- [x] Implement budget-matched random search and three-method GUI comparison.
+- [x] Add repeated-seed comparison summaries and CSV export with reproducibility metadata.
 - [ ] Run repeated experiments on 10, 30, and 50+ cities.
 - [ ] Compare alpha, beta, and rho one at a time; report average and best.
 - [ ] Implement one or two extensions (elitist or Max-Min).
@@ -30,15 +32,15 @@ verified the item.
 
 ## Visualization — follow [visualization/TUTORIAL.md](visualization/TUTORIAL.md)
 
-- [ ] Create the window layout with controls, city canvas, and results area.
-- [ ] Generate or define cities and draw labeled markers.
-- [ ] Draw the returned best tour, including its closing edge.
-- [ ] Add and validate alpha, beta, rho, ant, and iteration inputs.
-- [ ] Wire Start and Reset to the agreed solver interface.
-- [ ] Display best distance and convergence history.
+- [x] Create the window layout with controls, city canvas, and results area.
+- [x] Generate or define cities and draw labeled markers.
+- [x] Draw the returned best tour, including its closing edge.
+- [x] Add and validate alpha, beta, rho, ant, and iteration inputs.
+- [x] Wire Start and Reset to the agreed solver interface.
+- [x] Display best distance and convergence history.
 - [ ] Add click-to-place cities or file loading if time permits.
-- [ ] Add animation or pheromone styling if time permits.
-- [ ] Add CSV export if time permits.
+- [x] Add animation or pheromone styling if time permits.
+- [x] Add CSV export if time permits.
 - [ ] Test the demo and capture a backup recording/screenshots.
 
 ## Presentation and delivery

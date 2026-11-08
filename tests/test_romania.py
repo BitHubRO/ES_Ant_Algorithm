@@ -108,7 +108,7 @@ class RomaniaTests(unittest.TestCase):
         self.assertEqual([seat.id for seat in app.selected_seats], ["CJ", "IF", "IS"])
         with patch("visualization.app.Thread") as worker:
             app.start_run()
-        self.assertEqual(worker.call_args.kwargs["kwargs"], {"geographic": True})
+        self.assertTrue(worker.call_args.kwargs["kwargs"]["geographic"])
         self.assertEqual(worker.call_args.kwargs["args"][0], tuple(app.cities))
 
     def test_completed_route_uses_names_and_kilometers(self):

@@ -5,17 +5,23 @@ Romania county seats can be selected on an offline geographic map.
 """
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, filedialog
+from dataclasses import asdict, replace
+import math
 from queue import Empty, Queue
-from threading import Thread
+from threading import Event, Thread
 
-from algorithm.aco import Config, Result
+from algorithm.aco import Config, IterationProgress, Result
 from algorithm.tsp import City
 from algorithm.visualize_solution import scale_city_positions, scale_history
 from .datasets import generate_random_cities
-from .runner import run_solver
+from .runner import run_comparison
 from .romania_map import RomaniaMap
 from .tours import with_start_city
+from .pheromone_view import PheromoneView
+from .comparison_plot import draw_comparison_plot
+from algorithm.comparison import METHODS, METHOD_NAMES, METHOD_COLORS, MethodReport, ComparisonEvent, ComparisonFinished
+from algorithm.comparison_export import comparison_rows, write_comparison_csv
 
 
 DATASETS = ("Random cities", "Romania - county seats", "USA - state capitals")
@@ -61,7 +67,7 @@ class ExplorerApp:
         initial_width = min(1180, root.winfo_screenwidth() - 80)
         initial_height = min(920, root.winfo_screenheight() - 100)
         root.geometry(f"{initial_width}x{initial_height}")
-        root.minsize(900, 680)
+        root.minsize(1100, 760)
         root.columnconfigure(0, weight=1)
         root.rowconfigure(0, weight=1)
 
@@ -77,12 +83,29 @@ class ExplorerApp:
         self.map_hint = tk.StringVar(value="Random cities use schematic coordinates.")
         self.loaded_seed: int | None = None
         self.result: Result | None = None
+        self.comparison_reports = {}
+        self.method_states = {method: "Waiting" for method in METHODS}
+        self.random_history, self.random_tours = [], []
+        self.run_ants, self.run_budget = 0, 0
+        self.run_metadata = None
+        self.route_method = tk.StringVar(value=METHOD_NAMES["aco"])
+        self.route_info = tk.StringVar(value="No route available")
+        self.comparison_summary = tk.StringVar(value="All three methods use the same cities and costs.")
         self.running = False
+        self.slow_live = tk.BooleanVar(value=False)
+        self.live_speed = tk.StringVar(value="Normal (300 ms)")
+        self.run_total = 0
+        self.live_history = []
+        self.live_tours = []
+        self.live_pheromones = []
+        self.pheromone_max = 0.0
+        self.record_pheromones = tk.BooleanVar(value=True)
+        self.cancel_event = Event()
         self.playing = False
         self.animation_after = None
         self.animate_iterations = tk.BooleanVar(value=False)
         self.playback_speed = tk.StringVar(value="Normal (300 ms)")
-        self.messages: Queue[Result | Exception] = Queue()
+        self.messages: Queue[Result | IterationProgress | Exception] = Queue()
         self.iteration = tk.DoubleVar(value=1)
         self.iteration_label = tk.StringVar(value="No run selected")
         self.input_widgets = []
@@ -142,7 +165,7 @@ class ExplorerApp:
         actions = ttk.Frame(controls)
         actions.grid(row=12, column=0, columnspan=2, sticky="ew")
         actions.columnconfigure((0, 1), weight=1)
-        self.start_button = ttk.Button(actions, text="Start", command=self.start_run, state="disabled")
+        self.start_button = ttk.Button(actions, text="Run all 3", command=self.start_run, state="disabled")
         self.start_button.grid(row=0, column=0, sticky="ew", padx=(0, 6))
         self.reset_button = ttk.Button(actions, text="Reset form", command=self.reset_form)
         self.reset_button.grid(row=0, column=1, sticky="ew")
@@ -153,10 +176,28 @@ class ExplorerApp:
         self.generate_button.grid(row=14, column=0, columnspan=2, sticky="ew", pady=(12, 0))
         ttk.Label(controls, text="Count applies on Generate cities.\nSeed also controls solver randomness.",
                   wraplength=240).grid(row=15, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        self.live_checkbox = ttk.Checkbutton(
+            controls, text="Slow live run", variable=self.slow_live,
+            command=self._live_option_changed)
+        self.live_checkbox.grid(row=16, column=0, columnspan=2, sticky="w", pady=(12, 4))
+        self.live_speed_selector = ttk.Combobox(
+            controls, textvariable=self.live_speed, values=tuple(PLAYBACK_SPEEDS),
+            state="disabled", width=21)
+        self.live_speed_selector.grid(row=17, column=0, columnspan=2, sticky="ew")
 
     def _build_display(self, parent):
-        map_frame = ttk.LabelFrame(parent, text="City map", padding=8)
-        map_frame.grid(row=2, column=1, sticky="nsew")
+        # Give map and analysis the full available height. Stacking them let
+        # the map hide the plots when the horizontal divider moved too far.
+        self.display_split = tk.PanedWindow(
+            parent, orient=tk.HORIZONTAL, sashwidth=8, sashrelief=tk.RAISED,
+            showhandle=True, background="#cbd3db", borderwidth=0,
+            sashcursor="sb_h_double_arrow")
+        self.display_split.grid(row=2, column=1, rowspan=2, sticky="nsew")
+        self._split_initialized = False
+        self.display_split.bind("<Configure>", self._initialize_split)
+        map_frame = ttk.LabelFrame(self.display_split, text="City map", padding=8)
+        self.map_frame = map_frame
+        self.display_split.add(map_frame, minsize=300, stretch="always")
         map_frame.columnconfigure(0, weight=1)
         map_frame.rowconfigure(0, weight=0)
         map_frame.rowconfigure(1, weight=1)
@@ -177,21 +218,65 @@ class ExplorerApp:
         self.map_canvas.bind("<Configure>", self._draw_map)
         self.map_canvas.bind("<Button-1>", self._map_clicked)
         self.map_canvas.bind("<Motion>", self._map_hover)
-        ttk.Label(map_frame, textvariable=self.map_hint, wraplength=650).grid(row=2, column=0, sticky="w", pady=(3, 0))
+        ttk.Label(map_frame, textvariable=self.map_hint, wraplength=350).grid(row=2, column=0, sticky="w", pady=(3, 0))
         self.attribution = ttk.Label(map_frame, text="Boundaries: geoBoundaries / World Bank (CC BY 4.0). Cities: GeoNames / Călărași council.",
-                                     font=("Segoe UI", 8), wraplength=650)
+                                     font=("Segoe UI", 8), wraplength=350)
         self.attribution.grid(row=3, column=0, sticky="w")
         self.attribution.grid_remove()
+        route_bar = ttk.Frame(map_frame)
+        route_bar.grid(row=4, column=0, sticky="ew", pady=(6, 0))
+        ttk.Label(route_bar, text="Show route:").pack(side="left", padx=(0, 6))
+        self.route_selector = ttk.Combobox(route_bar, textvariable=self.route_method,
+                                          values=tuple(METHOD_NAMES.values()), state="readonly", width=18)
+        self.route_selector.pack(side="left")
+        self.route_selector.bind("<<ComboboxSelected>>", self._route_changed)
 
-        results = ttk.LabelFrame(parent, text="Results", padding=10)
-        results.grid(row=3, column=1, sticky="nsew", pady=(12, 0))
+        results = ttk.LabelFrame(self.display_split, text="Results", padding=10)
+        self.results_frame = results
+        self.display_split.add(results, minsize=420, stretch="always")
         results.columnconfigure(0, weight=1)
         results.rowconfigure(1, weight=1)
-        ttk.Label(results, textvariable=self.best_distance).grid(row=0, column=0, sticky="w")
-        self.chart = tk.Canvas(results, height=140, background="white", highlightthickness=0)
-        self.chart.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
+        summary = ttk.Frame(results)
+        summary.grid(row=0, column=0, sticky="ew")
+        summary.columnconfigure(0, weight=1)
+        self.export_button = ttk.Button(summary, text="Export CSV", command=self.export_comparison, state="disabled")
+        self.export_button.grid(row=0, column=0, sticky="e", pady=(0, 4))
+        self.comparison_table = ttk.Treeview(summary, columns=("method", "cost", "time", "tours", "state"),
+                                            show="headings", height=3, selectmode="browse")
+        self.comparison_table.grid(row=1, column=0, sticky="ew")
+        for key, title, width in (("method", "Algorithm", 120), ("cost", "Cost", 70), ("time", "Time (s)", 65),
+                                  ("tours", "Tours", 55), ("state", "Status", 65)):
+            self.comparison_table.heading(key, text=title)
+            self.comparison_table.column(key, width=width, minwidth=40, stretch=True,
+                                          anchor="w" if key in ("method", "state") else "e")
+        for method in METHODS:
+            self.comparison_table.insert("", "end", iid=method,
+                                         values=(METHOD_NAMES[method], "—", "—", "—", "Waiting"), tags=(method,))
+            self.comparison_table.tag_configure(method, foreground=METHOD_COLORS[method])
+        self.comparison_table.tag_configure("winner", background="#e3f3e8")
+        self.comparison_table.bind("<<TreeviewSelect>>", self._comparison_row_selected)
+        ttk.Label(summary, textvariable=self.comparison_summary, wraplength=400).grid(row=2, column=0, sticky="w", pady=(4, 0))
+        self.result_tabs = ttk.Notebook(results, height=230)
+        self.result_tabs.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
+        cost_tab = ttk.Frame(self.result_tabs)
+        cost_tab.columnconfigure(0, weight=1)
+        cost_tab.rowconfigure(0, weight=1)
+        self.result_tabs.add(cost_tab, text="Cost evolution")
+        self.chart = tk.Canvas(cost_tab, height=140, background="white", highlightthickness=0)
+        self.chart.grid(row=0, column=0, sticky="nsew")
         self.chart.bind("<Configure>", self._draw_chart)
-        ttk.Label(results, textvariable=self.iteration_label).grid(
+        self.chart.bind("<Map>", self._draw_chart)
+        pheromone_tab = ttk.Frame(self.result_tabs)
+        self.pheromone_tab = pheromone_tab
+        pheromone_tab.columnconfigure(0, weight=1)
+        pheromone_tab.rowconfigure(1, weight=1)
+        self.result_tabs.add(pheromone_tab, text="ACO pheromones")
+        self.record_checkbox = ttk.Checkbutton(
+            pheromone_tab, text="Record pheromone history for the next run", variable=self.record_pheromones)
+        self.record_checkbox.grid(row=0, column=0, sticky="w")
+        self.pheromone_view = PheromoneView(pheromone_tab)
+        self.pheromone_view.grid(row=1, column=0, sticky="nsew")
+        ttk.Label(results, textvariable=self.iteration_label, wraplength=400).grid(
             row=2, column=0, sticky="w", pady=(6, 0))
         self.slider = ttk.Scale(results, from_=1, to=1, variable=self.iteration,
                                 command=self._select_iteration, state="disabled")
@@ -207,25 +292,38 @@ class ExplorerApp:
         self.speed_selector = ttk.Combobox(
             playback, textvariable=self.playback_speed, values=tuple(PLAYBACK_SPEEDS),
             state="disabled", width=18)
-        self.speed_selector.grid(row=0, column=2)
-        self.route_text = tk.Text(results, height=2, wrap="word", state="disabled",
+        self.speed_selector.grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
+        route_tab = ttk.Frame(self.result_tabs)
+        route_tab.columnconfigure(0, weight=1)
+        route_tab.rowconfigure(1, weight=1)
+        self.result_tabs.add(route_tab, text="Route details")
+        ttk.Label(route_tab, textvariable=self.route_info, wraplength=400).grid(row=0, column=0, sticky="w", pady=6)
+        self.route_text = tk.Text(route_tab, height=2, wrap="word", state="disabled",
                                   font=("Segoe UI", 9), relief="flat")
-        self.route_text.grid(row=5, column=0, sticky="ew", pady=(6, 0))
-        route_scroll = ttk.Scrollbar(results, orient="vertical", command=self.route_text.yview)
-        route_scroll.grid(row=5, column=1, sticky="ns", pady=(6, 0))
+        self.route_text.grid(row=1, column=0, sticky="nsew")
+        route_scroll = ttk.Scrollbar(route_tab, orient="vertical", command=self.route_text.yview)
+        route_scroll.grid(row=1, column=1, sticky="ns")
         self.route_text.configure(yscrollcommand=route_scroll.set)
+
+    def _initialize_split(self, event):
+        """Choose the initial widths once, preserving later user adjustments."""
+        if not self._split_initialized and event.width >= 728:
+            self.display_split.sash_place(0, max(300, min(int(event.width * 0.5), event.width - 428)), 0)
+            self._split_initialized = True
 
     def _draw_map(self, event=None):
         """Redraw from stored coordinates; resizing never regenerates cities."""
         self.map_canvas.delete("all")
         width, height = self.map_canvas.winfo_width(), self.map_canvas.winfo_height()
+        tour = self._map_tour()
+        route_color = METHOD_COLORS[self._active_method()]
         if self.dataset.get() == DATASETS[1] and self.romania_map is not None:
             tour_ids = ()
-            if self.result:
+            if tour:
                 tour_ids = tuple(self.selected_seats[i].id
-                                 for i in self.result.tour_history[self._iteration_index()])
+                                 for i in tour)
             start_id = self.selection_order[0] if self.selection_order else None
-            self.romania_map.draw(self.map_canvas, self.selected_ids, tour_ids, start_id=start_id)
+            self.romania_map.draw(self.map_canvas, self.selected_ids, tour_ids, start_id=start_id, route_color=route_color)
             return
         if self.cities:
             # Tkinter may briefly report a tiny canvas while laying out widgets.
@@ -233,14 +331,13 @@ class ExplorerApp:
                 return
             positions = scale_city_positions(self.cities, width, height)
             start_city = None
-            if self.result:
-                tour = self.result.tour_history[self._iteration_index()]
+            if tour:
                 start_city = tour[0]
                 for index, city in enumerate(tour):
                     next_city = tour[(index + 1) % len(tour)]
                     self.map_canvas.create_line(
                         *positions[city], *positions[next_city],
-                        fill="#3274a1", width=2, arrow=tk.LAST, tags="route-edge")
+                        fill=route_color, width=2, arrow=tk.LAST, tags="route-edge")
             for index, (x, y) in enumerate(positions):
                 self.map_canvas.create_oval(
                     x - 5, y - 5, x + 5, y + 5,
@@ -264,19 +361,31 @@ class ExplorerApp:
             fill="#44576b", font=("Segoe UI", 13))
 
     def _draw_chart(self, event=None):
+        if self.comparison_reports:
+            cursor = (self._iteration_index() + 1) * self.run_ants if self.result is not None else None
+            draw_comparison_plot(self.chart, self.comparison_reports, self.run_budget, cursor)
+            return
         self.chart.delete("all")
         width, height = self.chart.winfo_width(), self.chart.winfo_height()
-        if self.result and width > 90 and height > 90:
-            points = scale_history(self.result.history, width, height)
+        if self.result and width > 60 and height > 35:
+            padding = min(45, max(8, (height - 40) // 2), (width - 30) // 2)
+            points = scale_history(self.result.history, width, height, padding=padding)
+            # Keep the live x axis fixed at the requested iteration count:
+            # early points occupy the left of the graph, not its full width.
+            total = self.run_total if self.running else len(self.result.history)
+            points = [(padding + i * (width - 2 * padding) / (total - 1) if total > 1 else width / 2, y)
+                      for i, (_, y) in enumerate(points)]
             self.chart.create_line(45, 20, 45, height - 35, width - 20, height - 35,
                                    fill="#657589")
             self.chart.create_text(width / 2, height - 12, text="Iteration", fill="#44576b")
+            self.chart.create_text(45, height - 25, text="1", fill="#657589")
+            self.chart.create_text(width - 45, height - 25, text=str(total), fill="#657589")
             self.chart.create_text(12, height / 2, text="Distance", angle=90, fill="#44576b")
             self.chart.create_text(48, 12, anchor="nw",
                                    text=f"Best-so-far: {self.result.history[0]:.4f} → {self.result.best_length:.4f}")
             if len(points) > 1:
                 self.chart.create_line(*[value for point in points for value in point],
-                                       fill="#3274a1", width=2)
+                                       fill="#3274a1", width=2, tags="cost-curve")
             x, y = points[self._iteration_index()]
             self.chart.create_line(x, 35, x, height - 35, fill="#d66a24", dash=(3, 3))
             self.chart.create_oval(x - 4, y - 4, x + 4, y + 4, fill="#d66a24", outline="")
@@ -291,6 +400,78 @@ class ExplorerApp:
         self.route_text.insert("1.0", text)
         self.route_text.configure(state="disabled")
 
+    def _active_method(self):
+        return next((method for method in METHODS if METHOD_NAMES[method] == self.route_method.get()), "aco")
+
+    def _map_tour(self):
+        method = self._active_method()
+        report = self.comparison_reports.get(method)
+        result = self.result if method == "aco" else report.result if report is not None else None
+        if result is None:
+            return ()
+        if method == "nearest_neighbor":
+            return tuple(result.best_tour)
+        index = self._iteration_index() if self.result is not None else len(result.history) - 1
+        return tuple(result.tour_history[min(index, len(result.tour_history) - 1)])
+
+    def _update_route_text(self):
+        tour = self._map_tour()
+        if not tour:
+            self._set_route_text("")
+            self.route_info.set(f"{METHOD_NAMES[self._active_method()]}: waiting for a route.")
+            return
+        names = ([self.selected_seats[i].name for i in tour] if self.dataset.get() == DATASETS[1]
+                 else [str(i) for i in tour])
+        self._set_route_text(" → ".join(names + names[:1]))
+        self.route_info.set(f"{METHOD_NAMES[self._active_method()]} | closed visiting order; "
+                            "the slider follows ACO checkpoints. Nearest neighbor shows its final route.")
+
+    def _route_changed(self, event=None):
+        self._pause_animation()
+        self._update_route_text()
+        self._draw_map()
+
+    def _comparison_row_selected(self, event=None):
+        selected = self.comparison_table.selection()
+        if selected:
+            self.route_method.set(METHOD_NAMES[selected[0]])
+            self._route_changed()
+
+    def _refresh_comparison_table(self):
+        complete = all(self.method_states[method] == "Finished" for method in METHODS)
+        lowest = min((report.result.best_length for report in self.comparison_reports.values()), default=None)
+        winners = []
+        for method in METHODS:
+            report = self.comparison_reports.get(method)
+            winner = complete and report is not None and math.isclose(report.result.best_length, lowest, rel_tol=1e-9)
+            if winner:
+                winners.append(METHOD_NAMES[method])
+            values = ((METHOD_NAMES[method], f"{report.result.best_length:.4f}",
+                       f"{report.result.compute_seconds:.4g}", report.evaluations, self.method_states[method])
+                      if report is not None else (METHOD_NAMES[method], "—", "—", "—", self.method_states[method]))
+            self.comparison_table.item(method, values=values, tags=(method, "winner") if winner else (method,))
+        if complete:
+            aco_cost = self.comparison_reports["aco"].result.best_length
+            nn_cost = self.comparison_reports["nearest_neighbor"].result.best_length
+            percent = (nn_cost - aco_cost) / nn_cost * 100
+            self.comparison_summary.set(f"Lowest cost: {', '.join(winners)}. ACO vs NN: {percent:+.2f}% improvement.")
+        else:
+            self.comparison_summary.set("Same costs; matched ACO/random tour budgets. Time excludes animation and drawing.")
+
+    def export_comparison(self):
+        if (self.running or len(self.comparison_reports) != 3 or self.run_metadata is None
+                or not all(state == "Finished" for state in self.method_states.values())):
+            return
+        path = filedialog.asksaveasfilename(parent=self.root, title="Export algorithm comparison",
+                                           defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
+        if path:
+            try:
+                write_comparison_csv(path, comparison_rows(self.comparison_reports, self.run_metadata))
+            except OSError as error:
+                self.status.set(f"Could not save comparison: {error}")
+                return
+            self.status.set(f"Saved costs, compute times, histories, and reproducibility metadata to {path}")
+
     def _iteration_index(self):
         return max(0, min(len(self.result.history) - 1, int(round(self.iteration.get())) - 1))
 
@@ -302,25 +483,48 @@ class ExplorerApp:
             self._pause_animation()
             self.status.set("Replay paused. Inspect an iteration or press Play to continue.")
         index = self._iteration_index()
+        total = self.run_total if self.running else len(self.result.history)
         self.iteration_label.set(
-            f"Iteration {index + 1}/{len(self.result.history)} | "
+            f"Iteration {index + 1}/{total} | "
             f"best-so-far distance: {self.result.history[index]:.4f} {self._distance_unit()}")
-        tour = self.result.tour_history[index]
-        names = ([self.selected_seats[i].name for i in tour] if self.dataset.get() == DATASETS[1]
-                 else [str(i) for i in tour])
-        self._set_route_text(" → ".join(names + names[:1]))
+        self._update_route_text()
         self._draw_map()
         self._draw_chart()
+        self._draw_pheromones()
+
+    def _draw_pheromones(self):
+        if self.result is None or not self.result.pheromone_history:
+            self.pheromone_view.show(None)
+            return
+        index = self._iteration_index()
+        labels = ([(seat.id, seat.name) for seat in self.selected_seats]
+                  if self.dataset.get() == DATASETS[1]
+                  else [(str(i), f"City {i}") for i in range(len(self.cities))])
+        self.pheromone_view.show(self.result.pheromone_history[index], labels, index + 1, self.pheromone_max)
 
     def _clear_result(self):
         self._pause_animation()
         self.result = None
+        self.comparison_reports = {}
+        self.method_states = {method: "Waiting" for method in METHODS}
+        self.random_history, self.random_tours = [], []
+        self.run_metadata = None
+        self.route_method.set(METHOD_NAMES["aco"])
+        self.comparison_table.selection_set("aco")
+        self.export_button.configure(state="disabled")
+        self._refresh_comparison_table()
+        self.route_info.set("No route available")
+        self.live_history = []
+        self.live_tours = []
+        self.live_pheromones = []
+        self.pheromone_max = 0.0
         self.best_distance.set("Best distance: --")
         self.slider.configure(state="disabled", to=1)
         self.iteration.set(1)
         self.iteration_label.set("No run selected")
         self._set_route_text("")
         self._draw_chart()
+        self._draw_pheromones()
         self._sync_playback_controls()
 
     def _sync_playback_controls(self):
@@ -329,6 +533,10 @@ class ExplorerApp:
         self.play_button.configure(state="normal" if can_play else "disabled",
                                    text="Pause" if self.playing else "Play")
         self.speed_selector.configure(state="readonly" if enabled else "disabled")
+        if enabled:
+            self.speed_selector.grid()
+        else:
+            self.speed_selector.grid_remove()
 
     def _pause_animation(self):
         """Cancel the scheduled frame so old playback cannot change a new run."""
@@ -381,6 +589,7 @@ class ExplorerApp:
             self._schedule_frame()
 
     def _close(self):
+        self.cancel_event.set()
         self._pause_animation()
         self.root.destroy()
 
@@ -524,7 +733,14 @@ class ExplorerApp:
         self.start_button.configure(state="normal" if not running and len(self.cities) >= 2 else "disabled")
         for widget in (self.select_all_button, self.clear_selection_button):
             widget.configure(state="disabled" if running else "normal")
+        self.live_checkbox.configure(state="disabled" if running else "normal")
+        self.record_checkbox.configure(state="disabled" if running else "normal")
+        self._live_option_changed()
         self._sync_playback_controls()
+
+    def _live_option_changed(self):
+        self.live_speed_selector.configure(
+            state="readonly" if self.slow_live.get() and not self.running else "disabled")
 
     def start_run(self):
         if self.running:
@@ -541,38 +757,134 @@ class ExplorerApp:
             self.feedback.set(str(error))
             self.status.set("Run not started. Please correct the settings.")
             return
+        if self.record_pheromones.get() and config.iterations * len(self.cities) ** 2 > 5_000_000:
+            self.feedback.set("Pheromone history is too large. Reduce cities/iterations, or uncheck recording in the Pheromone matrix tab.")
+            return
         self._clear_result()
+        self.run_total = config.iterations
+        self.run_ants = config.ants or len(self.cities)
+        self.run_budget = self.run_ants * config.iterations
+        self.run_metadata = dict(seed=seed, dataset=self.dataset.get(), unit=self._distance_unit(),
+                                 city_count=len(self.cities), config=asdict(config),
+                                 start_city=self.selected_seats[next(i for i, seat in enumerate(self.selected_seats)
+                                            if seat.id == self.selection_order[0])].name if self.selection_order else "",
+                                 cities=[dict(name=self.selected_seats[i].name if self.selected_seats else f"City {i}",
+                                              coordinates=city) for i, city in enumerate(self.cities)])
+        self.comparison_table.heading("cost", text="Cost (km)" if self.dataset.get() == DATASETS[1] else "Cost")
+        self.cancel_event = Event()
+        self.slider.configure(to=config.iterations, state="disabled")
         self._draw_map()
         self._set_running(True)
         self.feedback.set(f"Running on {len(self.cities)} loaded cities with solver seed {seed}.")
-        self.status.set(f"Running {config.iterations} iterations. Results will appear when the run finishes.")
+        self.status.set(f"Running {config.iterations} iterations. " + (
+            "The cost line and best route update after each iteration." if self.slow_live.get()
+            else "Results will appear when the run finishes."))
         try:
-            Thread(target=run_solver, args=(tuple(self.cities), config, seed, self.messages),
-                   kwargs={"geographic": self.dataset.get() == DATASETS[1]},
+            Thread(target=run_comparison, args=(tuple(self.cities), config, seed, self.messages),
+                   kwargs={"geographic": self.dataset.get() == DATASETS[1],
+                           "live_updates": self.slow_live.get(),
+                           "iteration_delay": PLAYBACK_SPEEDS[self.live_speed.get()] / 1000 if self.slow_live.get() else 0.0,
+                           "cancel_event": self.cancel_event,
+                           "record_pheromones": self.record_pheromones.get()},
+                   # Matrix recording is optional for experiments and larger runs.
                    daemon=True).start()
         except Exception as error:
             self._set_running(False)
             self.status.set(f"Could not start solver: {error}")
             return
-        self.root.after(100, self._poll_result)
+        self.root.after(30, self._poll_result)
+
+    def _with_selected_start(self, result):
+        if self.dataset.get() == DATASETS[1] and self.selection_order:
+            start_index = next(index for index, seat in enumerate(self.selected_seats)
+                               if seat.id == self.selection_order[0])
+            return with_start_city(result, start_index)
+        return result
+
+    def _show_progress(self, progress):
+        snapshot = self._with_selected_start(Result(
+            progress.best_tour, progress.best_length, [progress.best_length], [progress.best_tour]))
+        self.live_history.append(progress.best_length)
+        self.live_tours.append(snapshot.best_tour)
+        if progress.pheromones is not None:
+            self.live_pheromones.append(progress.pheromones)
+            self.pheromone_max = max(self.pheromone_max, max(max(row) for row in progress.pheromones))
+        self.result = Result(snapshot.best_tour, snapshot.best_length, self.live_history, self.live_tours,
+                             self.live_pheromones, compute_seconds=progress.compute_seconds)
+        self.iteration.set(progress.iteration)
+        self.best_distance.set(f"Best distance so far: {progress.best_length:.4f} {self._distance_unit()}")
+        self.status.set(f"Running iteration {progress.iteration}/{progress.total_iterations} — live cost evolution.")
+        self._select_iteration()
+
+    def _handle_comparison_event(self, event):
+        method = event.method
+        if event.state == "running":
+            self.method_states[method] = "Running"
+            self.status.set(f"Running {METHOD_NAMES[method]}…")
+        elif event.state == "finished":
+            self.method_states[method] = "Finished"
+            self.comparison_reports[method] = replace(event.report, result=self._with_selected_start(event.report.result))
+            if method == "aco":
+                self.result = self.comparison_reports[method].result
+                self.pheromone_max = max((max(row) for matrix in self.result.pheromone_history for row in matrix), default=0.0)
+                self.iteration.set(len(self.result.history))
+        elif event.progress is not None:
+            progress = event.progress
+            if method == "aco":
+                self._show_progress(progress)
+                result = self.result
+            else:
+                snapshot = self._with_selected_start(Result(progress.best_tour, progress.best_length,
+                                                             [progress.best_length], [progress.best_tour]))
+                self.random_history.append(progress.best_length)
+                self.random_tours.append(snapshot.best_tour)
+                result = Result(snapshot.best_tour, progress.best_length, self.random_history, self.random_tours,
+                                compute_seconds=progress.compute_seconds)
+                self.status.set(f"Random search: batch {progress.iteration}/{progress.total_iterations}")
+            # Partial reports let the common plot grow during slow computation.
+            self.comparison_reports[method] = MethodReport(
+                method, result, progress.iteration * self.run_ants,
+                tuple(self.run_ants * (i + 1) for i in range(len(result.history))))
+        self._refresh_comparison_table()
+        self._update_route_text()
+        self._draw_map()
+        self._draw_chart()
+        self._draw_pheromones()
 
     def _poll_result(self):
         """Only the main GUI thread touches widgets, including on failure."""
         try:
             message = self.messages.get_nowait()
         except Empty:
-            self.root.after(100, self._poll_result)
+            self.root.after(30, self._poll_result)
+            return
+        if isinstance(message, ComparisonEvent):
+            self._handle_comparison_event(message)
+            self.root.after(30, self._poll_result)
+            return
+        if isinstance(message, ComparisonFinished):
+            self.comparison_reports = {method: replace(report, result=self._with_selected_start(report.result))
+                                       for method, report in message.reports.items()}
+            self.method_states = {method: "Finished" for method in METHODS}
+            self._refresh_comparison_table()
+            self.export_button.configure(state="normal")
+            message = self.comparison_reports["aco"].result
+        if isinstance(message, IterationProgress):
+            self._show_progress(message)
+            self.root.after(30, self._poll_result)
             return
         self._set_running(False)
         if isinstance(message, Exception):
+            self.method_states = {method: "Failed" if state == "Running" else state
+                                  for method, state in self.method_states.items()}
+            self._refresh_comparison_table()
+            self.export_button.configure(state="disabled")
             self.feedback.set(str(message))
             self.status.set("Solver failed. Correct the settings and try again.")
             return
-        if self.dataset.get() == DATASETS[1] and self.selection_order:
-            start_index = next(index for index, seat in enumerate(self.selected_seats)
-                               if seat.id == self.selection_order[0])
-            message = with_start_city(message, start_index)
+        message = self._with_selected_start(message)
         self.result = message
+        self.pheromone_max = max((max(row) for matrix in message.pheromone_history for row in matrix), default=0.0)
         self.best_distance.set(f"Best distance: {message.best_length:.4f} {self._distance_unit()}")
         self.slider.configure(to=len(message.history), state="normal" if len(message.history) > 1 else "disabled")
         self.iteration.set(len(message.history))
@@ -580,6 +892,8 @@ class ExplorerApp:
         self._sync_playback_controls()
         self.feedback.set("Run complete. Orange marker identifies the displayed tour's start.")
         self.status.set("Run complete. Move the slider to inspect history, or change parameters and press Start again.")
+        if self.comparison_reports:
+            self.status.set("Comparison complete. Select a row to inspect its route; Export CSV saves all three results and histories.")
         if self.animate_iterations.get() and len(message.history) > 1:
             self.toggle_playback()
 
@@ -590,6 +904,10 @@ class ExplorerApp:
             self.fields[name].set(value)
         self.dataset.set(DATASETS[0])
         self.animate_iterations.set(False)
+        self.slow_live.set(False)
+        self.record_pheromones.set(True)
+        self.live_speed.set("Normal (300 ms)")
+        self._live_option_changed()
         self.playback_speed.set("Normal (300 ms)")
         self._dataset_changed()
         self.best_distance.set("Best distance: --")

@@ -1,7 +1,7 @@
 """Solver integration and GUI state tests without opening a desktop window."""
 
 from queue import Queue
-from threading import Thread
+from threading import Event, Thread
 import unittest
 from unittest.mock import Mock, patch
 
@@ -16,6 +16,18 @@ class ExplorerRunTests(unittest.TestCase):
         app = ExplorerApp.__new__(ExplorerApp)
         app.root = Mock()
         app.running = False
+        app.run_total = 0
+        app.live_history = []
+        app.live_tours = []
+        app.live_pheromones = []
+        app.pheromone_max = 0.0
+        app.record_pheromones = Mock()
+        app.record_pheromones.get.return_value = False
+        app.cancel_event = Event()
+        app.slow_live = Mock()
+        app.slow_live.get.return_value = False
+        app.live_speed = Mock()
+        app.live_speed.get.return_value = "Normal (300 ms)"
         app.playing = False
         app.animation_after = None
         app.animate_iterations = Mock()
@@ -23,6 +35,13 @@ class ExplorerRunTests(unittest.TestCase):
         app.playback_speed = Mock()
         app.playback_speed.get.return_value = "Normal (300 ms)"
         app.result = None
+        app.comparison_reports = {}
+        app.method_states = {key: "Waiting" for key in ("aco", "nearest_neighbor", "random_search")}
+        app.random_history, app.random_tours = [], []
+        app.run_ants, app.run_budget = 0, 0
+        app.run_metadata = None
+        app.route_method = Mock()
+        app.route_method.get.return_value = "ACO"
         app.cities = [(0, 0), (1, 0), (1, 1), (0, 1)]
         app.romania_map = None
         app.selected_ids = set()
@@ -41,7 +60,9 @@ class ExplorerRunTests(unittest.TestCase):
                      "start_button", "reset_button", "check_button", "map_canvas", "chart",
                      "play_button", "speed_selector", "selection_toolbar", "attribution",
                      "selection_label", "map_hint", "select_all_button", "clear_selection_button",
-                     "route_text", "start_label"):
+                     "route_text", "start_label", "live_checkbox", "live_speed_selector",
+                     "record_checkbox", "pheromone_view", "comparison_table", "comparison_summary",
+                     "export_button", "route_info"):
             setattr(app, name, Mock())
         app.iteration.get.return_value = 1
         app.map_canvas.winfo_width.return_value = 600
@@ -117,7 +138,7 @@ class ExplorerRunTests(unittest.TestCase):
     def test_empty_queue_reschedules_and_history_selection_is_bounded(self):
         app = self.make_app()
         app._poll_result()
-        app.root.after.assert_called_once_with(100, app._poll_result)
+        app.root.after.assert_called_once_with(30, app._poll_result)
         app.result = Result([0, 1, 2, 3], 4, [5, 4], [(0, 2, 1, 3), (0, 1, 2, 3)])
         app.iteration.get.return_value = 999
         self.assertEqual(app._iteration_index(), 1)

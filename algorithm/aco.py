@@ -1,7 +1,7 @@
-# ACO SOLVER WORKSHEET
+# ACO SOLVER
 #
-# This file is intentionally pseudocode, not a working Python implementation.
-# Work through the steps in order and replace each section with Python.
+# Working implementation with worksheet comments explaining each step.
+# The public solver can be used independently from the graphical application.
 #
 # Shared concepts:
 #   cities      - sequence of (x, y) coordinates
@@ -29,6 +29,7 @@ from collections.abc import Sequence
 import dataclasses
 import math
 import random
+from time import perf_counter
 from .tsp import (
     City,
     distance_matrix,
@@ -82,6 +83,19 @@ class Result:
     best_length: float
     history: Sequence[float]
     tour_history: Sequence[tuple[int, ...]]
+    pheromone_history: Sequence[tuple[tuple[float, ...], ...]] = dataclasses.field(default_factory=tuple)
+    compute_seconds: float = dataclasses.field(default=0.0, compare=False)
+
+
+@dataclasses.dataclass(frozen=True)
+class IterationProgress:
+    """An immutable best-so-far snapshot emitted after a complete iteration."""
+    iteration: int
+    total_iterations: int
+    best_tour: tuple[int, ...]
+    best_length: float
+    pheromones: tuple[tuple[float, ...], ...] | None = None
+    compute_seconds: float = dataclasses.field(default=0.0, compare=False)
 
 # STEP 2 — Choose the next city
 # -----------------------------
@@ -261,7 +275,7 @@ def update_pheromones(pheromones, tours_with_lengths, config, symmetric=True):
 #   return a result containing best_tour, best_length, and history
 #
 
-def solve(cities, config=None, seed=None):
+def solve(cities, config=None, seed=None, *, progress_callback=None, record_pheromones=False):
     if config is None:
         config = Config()
 
@@ -271,10 +285,12 @@ def solve(cities, config=None, seed=None):
         config=config,
         seed=seed,
         symmetric_pheromones=True,
+        progress_callback=progress_callback,
+        record_pheromones=record_pheromones,
     )
 
 
-def solve_distance_matrix(cost_matrix, config=None, seed=None):
+def solve_distance_matrix(cost_matrix, config=None, seed=None, *, progress_callback=None, record_pheromones=False):
     """Solve TSP using caller-supplied directed costs instead of coordinates.
 
     Matrix rows and columns must use the same city ordering. Off-diagonal costs
@@ -289,10 +305,13 @@ def solve_distance_matrix(cost_matrix, config=None, seed=None):
         config=config,
         seed=seed,
         symmetric_pheromones=False,
+        progress_callback=progress_callback,
+        record_pheromones=record_pheromones,
     )
 
 
-def _solve_with_distances(distances, config, seed, symmetric_pheromones):
+def _solve_with_distances(distances, config, seed, symmetric_pheromones, progress_callback=None, record_pheromones=False):
+    setup_started = perf_counter()
     city_count = len(distances)
     ant_count = city_count if config.ants == 0 else config.ants
 
@@ -303,8 +322,11 @@ def _solve_with_distances(distances, config, seed, symmetric_pheromones):
     best_length = float('inf')
     history = []
     tour_history = []
+    pheromone_history = []
+    compute_seconds = perf_counter() - setup_started
 
     for _ in range(config.iterations):
+        iteration_started = perf_counter()
         tours_with_lengths = []
 
         for _ in range(ant_count):
@@ -324,12 +346,27 @@ def _solve_with_distances(distances, config, seed, symmetric_pheromones):
         )
         history.append(best_length)
         tour_history.append(tuple(best_tour))
+        compute_seconds += perf_counter() - iteration_started
+        # Copy after evaporation and deposits. Tuples keep later iterations
+        # from changing saved matrices or snapshots already sent to the GUI.
+        snapshot = tuple(tuple(row) for row in pheromones) if record_pheromones else None
+        if snapshot is not None:
+            pheromone_history.append(snapshot)
+        if progress_callback is not None:
+            progress_callback(IterationProgress(
+                iteration=len(history), total_iterations=config.iterations,
+                best_tour=tuple(best_tour), best_length=best_length,
+                pheromones=snapshot,
+                compute_seconds=compute_seconds,
+            ))
 
     return Result(
         best_tour=best_tour,
         best_length=best_length,
         history=history,
         tour_history=tour_history,
+        pheromone_history=tuple(pheromone_history),
+        compute_seconds=compute_seconds,
     )
 
 # STEP 6 — Implement and test one piece at a time
