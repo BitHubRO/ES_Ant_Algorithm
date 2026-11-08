@@ -33,6 +33,75 @@ As you implement the project, add your own Python modules and tests in the
 folders described by each tutorial. Keep the ACO solver independent from the
 UI so that it can be tested and run without opening a window.
 
+## Open the new application window
+
+From the repository root, run:
+
+```powershell
+python -m visualization.app
+```
+
+The window provides a dataset selector, parameter fields, settings validation,
+Reset form, and random city generation. Choose Random cities, set the count
+and seed, and click Generate cities to draw numbered markers. The same count
+and seed reproduce the same coordinates; resizing only changes their display.
+Press Start to optimize the loaded cities. The solver runs in a background
+thread, and controls are locked until it finishes. The result shows a closed
+route (orange start marker), distance in coordinate units, and a convergence
+chart. The iteration slider selects the best-known route at each iteration
+after the run; it is not live progress. Enable **Animate iterations (replay)**
+to automatically play those snapshots after computation finishes. Animation
+is off by default. Play/Pause controls playback; the speed selector sets the
+delay between iterations. Moving the slider pauses playback. Pressing Play
+at the end replays from iteration 1. Unchecking the option stops playback.
+The animation shows the best-so-far tour, not individual ants or pheromones;
+consecutive iterations may show the same route when no improvement occurs.
+Rerun with different parameters on the
+same loaded cities for comparison. The seed field controls solver randomness;
+it changes city coordinates only when you click Generate cities.
+Reset form clears cities and results and restores defaults. Random city labels
+start at 0 to match the solver's indices. The US state-capital dataset is not
+loaded yet.
+The window uses Tkinter and needs no extra pip packages.
+
+### Select Romania county seats
+
+Choose **Romania - county seats** to load an offline county map and 41 distinct
+county-seat locations. Click a marker to select or deselect it; hover to see
+the city and county name. Markers are labeled with county codes. White means
+unselected, blue means selected, and orange marks the displayed tour's start.
+București appears once, representing Ilfov's seat and the capital.
+
+Choose at least two cities, or use Select all, then press Start. Clear selection
+removes all chosen cities. Changing the selection clears the previous result
+and stops playback. Selection is locked during computation. The result includes
+the city names in visit order and the closing return leg. Replay works with
+the selected cities exactly as it does with random cities.
+
+The first city you select is the starting city. It is marked orange immediately
+and named above the map. The final route and every replay iteration start and
+end there. If you deselect it, the earliest remaining selected city becomes
+the start; selecting a city again puts it last in the selection order.
+Select all preserves an existing starting city. If nothing was selected,
+Select all chooses Alba Iulia (the first city in dataset order). Clear selection,
+Reset form, and switching datasets clear the starting-city choice.
+ACO still explores tours with random starting cities; the saved closed tours
+are rotated for display, preserving their edges, direction, and distances.
+
+Distances are **geographic kilometers**, calculated with Haversine from city
+coordinates, not driving distances. Route lines connect cities directly and
+do not follow roads. The map keeps its full-country extent when you select
+fewer cities or resize. No network or API key is required at runtime.
+Data attribution and source details are in [visualization/data/SOURCES.md](visualization/data/SOURCES.md).
+
+GUI data and solver-integration checks can run without extra packages:
+
+```powershell
+python -m unittest discover -s tests -p "test_city_datasets.py" -v
+python -m unittest discover -s tests -p "test_explorer_run.py" -v
+python -m unittest discover -s tests -p "test_romania.py" -v
+```
+
 ## Run algorithm experiments
 
 The experiment runner compares the ACO solver with nearest neighbor using fixed

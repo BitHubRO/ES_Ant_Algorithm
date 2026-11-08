@@ -1,0 +1,330 @@
+[
+  {
+    "id": "AB",
+    "name": "Alba Iulia",
+    "county": "Alba",
+    "lon": 23.58333,
+    "lat": 46.06667,
+    "geonames_id": 686578
+  },
+  {
+    "id": "AG",
+    "name": "Pitești",
+    "county": "Argeș",
+    "lon": 24.86667,
+    "lat": 44.85,
+    "geonames_id": 670609
+  },
+  {
+    "id": "AR",
+    "name": "Arad",
+    "county": "Arad",
+    "lon": 21.31667,
+    "lat": 46.18333,
+    "geonames_id": 686254
+  },
+  {
+    "id": "BC",
+    "name": "Bacău",
+    "county": "Bacău",
+    "lon": 26.91384,
+    "lat": 46.56718,
+    "geonames_id": 685948
+  },
+  {
+    "id": "BH",
+    "name": "Oradea",
+    "county": "Bihor",
+    "lon": 21.91833,
+    "lat": 47.0458,
+    "geonames_id": 671768
+  },
+  {
+    "id": "BN",
+    "name": "Bistrița",
+    "county": "Bistrița-Năsăud",
+    "lon": 24.50011,
+    "lat": 47.13316,
+    "geonames_id": 684657
+  },
+  {
+    "id": "BR",
+    "name": "Brăila",
+    "county": "Brăila",
+    "lon": 27.97429,
+    "lat": 45.27152,
+    "geonames_id": 683902
+  },
+  {
+    "id": "BT",
+    "name": "Botoșani",
+    "county": "Botoșani",
+    "lon": 26.66667,
+    "lat": 47.75,
+    "geonames_id": 684039
+  },
+  {
+    "id": "BV",
+    "name": "Brașov",
+    "county": "Brașov",
+    "lon": 25.60613,
+    "lat": 45.64861,
+    "geonames_id": 683844
+  },
+  {
+    "id": "BZ",
+    "name": "Buzău",
+    "county": "Buzău",
+    "lon": 26.83333,
+    "lat": 45.15,
+    "geonames_id": 683123
+  },
+  {
+    "id": "CJ",
+    "name": "Cluj-Napoca",
+    "county": "Cluj",
+    "lon": 23.6,
+    "lat": 46.76667,
+    "geonames_id": 681290
+  },
+  {
+    "id": "CL",
+    "name": "Călărași",
+    "county": "Călărași",
+    "lon": 27.35,
+    "lat": 44.2,
+    "source": "https://www.calarasi.ro/wp-content/uploads/2024/05/HOTARAREA-9.pdf"
+  },
+  {
+    "id": "CS",
+    "name": "Reșița",
+    "county": "Caraș-Severin",
+    "lon": 21.88917,
+    "lat": 45.30083,
+    "geonames_id": 668954
+  },
+  {
+    "id": "CT",
+    "name": "Constanța",
+    "county": "Constanța",
+    "lon": 28.63432,
+    "lat": 44.18073,
+    "geonames_id": 680963
+  },
+  {
+    "id": "CV",
+    "name": "Sfântu Gheorghe",
+    "county": "Covasna",
+    "lon": 25.78333,
+    "lat": 45.86667,
+    "geonames_id": 667303
+  },
+  {
+    "id": "DB",
+    "name": "Târgoviște",
+    "county": "Dâmbovița",
+    "lon": 25.4567,
+    "lat": 44.92543,
+    "geonames_id": 665024
+  },
+  {
+    "id": "DJ",
+    "name": "Craiova",
+    "county": "Dolj",
+    "lon": 23.8,
+    "lat": 44.31667,
+    "geonames_id": 680332
+  },
+  {
+    "id": "GJ",
+    "name": "Târgu Jiu",
+    "county": "Gorj",
+    "lon": 23.28333,
+    "lat": 45.05,
+    "geonames_id": 665010
+  },
+  {
+    "id": "GL",
+    "name": "Galați",
+    "county": "Galați",
+    "lon": 28.05028,
+    "lat": 45.43687,
+    "geonames_id": 677697
+  },
+  {
+    "id": "GR",
+    "name": "Giurgiu",
+    "county": "Giurgiu",
+    "lon": 25.9627,
+    "lat": 43.88664,
+    "geonames_id": 677106
+  },
+  {
+    "id": "HD",
+    "name": "Deva",
+    "county": "Hunedoara",
+    "lon": 22.9,
+    "lat": 45.88333,
+    "geonames_id": 679452
+  },
+  {
+    "id": "HR",
+    "name": "Miercurea-Ciuc",
+    "county": "Harghita",
+    "lon": 25.8,
+    "lat": 46.35,
+    "geonames_id": 673441
+  },
+  {
+    "id": "IF",
+    "name": "București",
+    "county": "Ilfov / București",
+    "lon": 26.10626,
+    "lat": 44.43225,
+    "geonames_id": 683506
+  },
+  {
+    "id": "IL",
+    "name": "Slobozia",
+    "county": "Ialomița",
+    "lon": 27.3633,
+    "lat": 44.5647,
+    "geonames_id": 8581467
+  },
+  {
+    "id": "IS",
+    "name": "Iași",
+    "county": "Iași",
+    "lon": 27.6,
+    "lat": 47.16667,
+    "geonames_id": 675810
+  },
+  {
+    "id": "MH",
+    "name": "Drobeta-Turnu Severin",
+    "county": "Mehedinți",
+    "lon": 22.65288,
+    "lat": 44.62693,
+    "geonames_id": 678817
+  },
+  {
+    "id": "MM",
+    "name": "Baia Mare",
+    "county": "Maramureș",
+    "lon": 23.56808,
+    "lat": 47.65729,
+    "geonames_id": 685826
+  },
+  {
+    "id": "MS",
+    "name": "Târgu Mureș",
+    "county": "Mureș",
+    "lon": 24.55747,
+    "lat": 46.54245,
+    "geonames_id": 665004
+  },
+  {
+    "id": "NT",
+    "name": "Piatra Neamț",
+    "county": "Neamț",
+    "lon": 26.33333,
+    "lat": 46.91667,
+    "geonames_id": 670889
+  },
+  {
+    "id": "OT",
+    "name": "Slatina",
+    "county": "Olt",
+    "lon": 24.36667,
+    "lat": 44.43333,
+    "geonames_id": 666767
+  },
+  {
+    "id": "PH",
+    "name": "Ploiești",
+    "county": "Prahova",
+    "lon": 26.01667,
+    "lat": 44.95,
+    "geonames_id": 670474
+  },
+  {
+    "id": "SB",
+    "name": "Sibiu",
+    "county": "Sibiu",
+    "lon": 24.15,
+    "lat": 45.8,
+    "geonames_id": 667268
+  },
+  {
+    "id": "SJ",
+    "name": "Zalău",
+    "county": "Sălaj",
+    "lon": 23.05,
+    "lat": 47.2,
+    "geonames_id": 662334
+  },
+  {
+    "id": "SM",
+    "name": "Satu Mare",
+    "county": "Satu Mare",
+    "lon": 22.86255,
+    "lat": 47.79926,
+    "geonames_id": 667873
+  },
+  {
+    "id": "SV",
+    "name": "Suceava",
+    "county": "Suceava",
+    "lon": 26.25,
+    "lat": 47.63333,
+    "geonames_id": 665850
+  },
+  {
+    "id": "TL",
+    "name": "Tulcea",
+    "county": "Tulcea",
+    "lon": 28.80501,
+    "lat": 45.1787,
+    "geonames_id": 664518
+  },
+  {
+    "id": "TM",
+    "name": "Timișoara",
+    "county": "Timiș",
+    "lon": 21.22571,
+    "lat": 45.75372,
+    "geonames_id": 665087
+  },
+  {
+    "id": "TR",
+    "name": "Alexandria",
+    "county": "Teleorman",
+    "lon": 25.33333,
+    "lat": 43.98333,
+    "geonames_id": 686502
+  },
+  {
+    "id": "VL",
+    "name": "Râmnicu Vâlcea",
+    "county": "Vâlcea",
+    "lon": 24.36667,
+    "lat": 45.1,
+    "geonames_id": 668872
+  },
+  {
+    "id": "VN",
+    "name": "Focșani",
+    "county": "Vrancea",
+    "lon": 27.18333,
+    "lat": 45.7,
+    "geonames_id": 678015
+  },
+  {
+    "id": "VS",
+    "name": "Vaslui",
+    "county": "Vaslui",
+    "lon": 27.73333,
+    "lat": 46.63333,
+    "geonames_id": 663118
+  }
+]
